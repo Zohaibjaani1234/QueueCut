@@ -1,7 +1,17 @@
 # Local Development Profile — NEVER COMMIT THIS FILE
 # Copy this to application-local.properties and fill in your values
 
-# Database — use local PostgreSQL or Supabase direct connection
+# Option 1: H2 In-Memory Database (Zero setup - default for quick development)
+# spring.datasource.url=jdbc:h2:mem:queuecut;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+# spring.datasource.driverClassName=org.h2.Driver
+# spring.datasource.username=sa
+# spring.datasource.password=
+# spring.jpa.hibernate.ddl-auto=create-drop
+# spring.flyway.enabled=false
+# spring.h2.console.enabled=true
+# spring.h2.console.path=/h2-console
+
+# Option 2: Local PostgreSQL / Supabase
 spring.datasource.url=jdbc:postgresql://localhost:5432/queuecut
 spring.datasource.username=postgres
 spring.datasource.password=your_local_password_here

@@ -53,9 +53,13 @@ public class SecurityConfig {
         http
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .headers(headers -> headers
+                .frameOptions(frame -> frame.sameOrigin()))  // Allow H2 console iframe
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                // H2 Console (local dev only)
+                .requestMatchers("/h2-console/**").permitAll()
                 // Public student endpoints
                 .requestMatchers(HttpMethod.GET,  "/api/queue/status").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/queue/join").permitAll()

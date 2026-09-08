@@ -30,7 +30,9 @@ public interface QueueEntryRepository extends JpaRepository<QueueEntry, UUID> {
             SELECT COUNT(qe) > 0 FROM QueueEntry qe
             WHERE qe.session.id = :sessionId
               AND qe.studentId = :studentId
-              AND qe.status IN ('WAITING', 'ALMOST_READY', 'CURRENT')
+              AND qe.status IN (com.queuecut.entity.QueueStatus.WAITING,
+                                com.queuecut.entity.QueueStatus.ALMOST_READY,
+                                com.queuecut.entity.QueueStatus.CURRENT)
             """)
     boolean existsActiveEntryForStudent(@Param("sessionId") UUID sessionId,
                                         @Param("studentId") String studentId);
@@ -42,7 +44,9 @@ public interface QueueEntryRepository extends JpaRepository<QueueEntry, UUID> {
             SELECT COUNT(qe) FROM QueueEntry qe
             WHERE qe.session.id = :sessionId
               AND qe.queueNumber < :myQueueNumber
-              AND qe.status IN ('WAITING', 'ALMOST_READY', 'CURRENT')
+              AND qe.status IN (com.queuecut.entity.QueueStatus.WAITING,
+                                com.queuecut.entity.QueueStatus.ALMOST_READY,
+                                com.queuecut.entity.QueueStatus.CURRENT)
             """)
     long countPeopleAhead(@Param("sessionId") UUID sessionId,
                           @Param("myQueueNumber") int myQueueNumber);
@@ -53,7 +57,9 @@ public interface QueueEntryRepository extends JpaRepository<QueueEntry, UUID> {
     @Query("""
             SELECT COUNT(qe) FROM QueueEntry qe
             WHERE qe.session.id = :sessionId
-              AND qe.status IN ('WAITING', 'ALMOST_READY', 'CURRENT')
+              AND qe.status IN (com.queuecut.entity.QueueStatus.WAITING,
+                                com.queuecut.entity.QueueStatus.ALMOST_READY,
+                                com.queuecut.entity.QueueStatus.CURRENT)
             """)
     long countActiveEntries(@Param("sessionId") UUID sessionId);
 
@@ -63,22 +69,25 @@ public interface QueueEntryRepository extends JpaRepository<QueueEntry, UUID> {
     @Query("""
             SELECT qe FROM QueueEntry qe
             WHERE qe.session.id = :sessionId
-              AND qe.status IN ('WAITING', 'ALMOST_READY')
+              AND qe.status IN (com.queuecut.entity.QueueStatus.WAITING,
+                                com.queuecut.entity.QueueStatus.ALMOST_READY)
             ORDER BY qe.queueNumber ASC
-            LIMIT 1
             """)
-    Optional<QueueEntry> findNextWaitingEntry(@Param("sessionId") UUID sessionId);
+    List<QueueEntry> findNextWaitingEntries(@Param("sessionId") UUID sessionId);
+
+    /**
+     * Find the next entry to be called (convenience wrapper returning Optional).
+     */
+    default Optional<QueueEntry> findNextWaitingEntry(UUID sessionId) {
+        List<QueueEntry> entries = findNextWaitingEntries(sessionId);
+        return entries.isEmpty() ? Optional.empty() : Optional.of(entries.get(0));
+    }
 
     /**
      * Find the entry that should become ALMOST_READY (the one right after the next CURRENT).
      */
-    @Query("""
-            SELECT qe FROM QueueEntry qe
-            WHERE qe.session.id = :sessionId
-              AND qe.status IN ('WAITING', 'ALMOST_READY')
-            ORDER BY qe.queueNumber ASC
-            LIMIT 1
-            OFFSET 1
-            """)
-    Optional<QueueEntry> findAlmostReadyCandidate(@Param("sessionId") UUID sessionId);
+    default Optional<QueueEntry> findAlmostReadyCandidate(UUID sessionId) {
+        List<QueueEntry> entries = findNextWaitingEntries(sessionId);
+        return entries.size() > 1 ? Optional.of(entries.get(1)) : Optional.empty();
+    }
 }
