@@ -1,0 +1,27 @@
+# Local Development Profile — NEVER COMMIT THIS FILE
+# Copy this to application-local.properties and fill in your values
+
+# Database — use local PostgreSQL or Supabase direct connection
+spring.datasource.url=jdbc:postgresql://localhost:5432/queuecut
+spring.datasource.username=postgres
+spring.datasource.password=your_local_password_here
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# Connection pool
+spring.datasource.hikari.maximum-pool-size=5
+spring.datasource.hikari.minimum-idle=2
+spring.datasource.hikari.connection-timeout=30000
+
+# JWT
+jwt.secret=local-dev-jwt-secret-minimum-32-characters-long-change-in-production
+jwt.expiration-ms=86400000
+
+# CORS
+cors.allowed-origins=http://localhost:5173,http://localhost:3000
+
+# Barber initial password (used by DataInitializer on first run)
+barber.initial-password=changeme123
+
+# Show SQL in local dev
+spring.jpa.show-sql=true
+logging.level.com.queuecut=DEBUG
