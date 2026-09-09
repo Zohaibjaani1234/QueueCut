@@ -289,11 +289,16 @@ function renderStudentView() {
         </div>
 
         <!-- Actions -->
-        ${!isCurrent ? `
-          <button id="open-cancel-btn" class="btn btn-danger">
-            ❌ Cancel My Ticket
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+          ${!isCurrent ? `
+            <button id="open-cancel-btn" class="btn btn-danger">
+              ❌ Cancel My Ticket
+            </button>
+          ` : ''}
+          <button id="join-another-btn" class="btn btn-secondary" style="font-size: 0.85rem; padding: 10px;">
+            ➕ Join as Another Student (Test / Switch Device)
           </button>
-        ` : ''}
+        </div>
       </div>
     `;
   }
@@ -603,6 +608,17 @@ function bindEvents() {
         state.loading = false;
         render();
       }
+    };
+  }
+
+  // Join Another Student (Testing / Switch Device)
+  const joinAnotherBtn = document.getElementById('join-another-btn');
+  if (joinAnotherBtn) {
+    joinAnotherBtn.onclick = () => {
+      setStoredTicket(null);
+      state.myStatus = null;
+      showToast('Switched to public queue view. You can now join as another student.', 'info');
+      render();
     };
   }
 
