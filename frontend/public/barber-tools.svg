@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none" stroke="rgba(245, 158, 11, 0.12)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Comb -->
+  <g transform="rotate(-35 100 100)">
+    <rect x="30" y="85" width="140" height="26" rx="5" />
+    <line x1="45" y1="85" x2="45" y2="102" />
+    <line x1="55" y1="85" x2="55" y2="102" />
+    <line x1="65" y1="85" x2="65" y2="102" />
+    <line x1="75" y1="85" x2="75" y2="102" />
+    <line x1="85" y1="85" x2="85" y2="102" />
+    <line x1="95" y1="85" x2="95" y2="102" />
+    <line x1="105" y1="85" x2="105" y2="102" />
+    <line x1="115" y1="85" x2="115" y2="102" />
+    <line x1="125" y1="85" x2="125" y2="102" />
+    <line x1="135" y1="85" x2="135" y2="102" />
+    <line x1="145" y1="85" x2="145" y2="102" />
+    <line x1="155" y1="85" x2="155" y2="102" />
+  </g>
+  <!-- Scissors -->
+  <g transform="rotate(35 100 100)">
+    <!-- Finger Rings -->
+    <circle cx="50" cy="50" r="16" />
+    <circle cx="50" cy="150" r="16" />
+    <!-- Blades & Pivot -->
+    <path d="M62 60 L140 135" />
+    <path d="M62 140 L140 65" />
+    <circle cx="95" cy="100" r="4" fill="rgba(245, 158, 11, 0.12)" />
+    <!-- Blade points -->
+    <path d="M140 135 Q 165 155 175 160 Q 155 145 135 130" />
+    <path d="M140 65 Q 165 45 175 40 Q 155 55 135 70" />
+  </g>
+</svg>

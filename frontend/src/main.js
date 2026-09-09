@@ -191,15 +191,23 @@ function render() {
     <!-- Navbar Header -->
     <header class="navbar">
       <a href="#" class="brand">
-        <div class="brand-icon">✂️</div>
-        <div class="brand-name">Queue<span>Cut</span></div>
+        <div class="brand-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="6" cy="6" r="3"></circle>
+            <circle cx="6" cy="18" r="3"></circle>
+            <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+            <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+            <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+          </svg>
+        </div>
+        <div class="brand-name">QueueCut</div>
       </a>
       <div class="nav-links">
         <button id="toggle-sound-btn" class="nav-btn" title="Toggle audio alerts">
           ${state.soundEnabled ? '🔔 Sound ON' : '🔕 Muted'}
         </button>
         <button id="switch-view-btn" class="nav-btn ${state.route === 'barber' ? 'active' : ''}">
-          ${state.route === 'student' ? ' Barber Portal' : '👤 Student View'}
+          ${state.route === 'student' ? 'Barber Portal' : '👤 Student View'}
         </button>
       </div>
     </header>
@@ -314,7 +322,7 @@ function renderStudentView() {
         </div>
         <span class="status-pill ${queueOpen ? 'open' : 'closed'}">
           <span class="pulse-dot"></span>
-          ${queueOpen ? 'QUEUE OPEN' : 'CLOSED'}
+          ${queueOpen ? 'OPEN' : 'CLOSED'}
         </span>
       </div>
 
