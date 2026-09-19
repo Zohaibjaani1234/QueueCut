@@ -6,7 +6,7 @@ import * as api from './api.js';
 const state = {
   route: window.location.hash === '#barber' ? 'barber' : 'student',
   studentTicket: getStoredTicket(),
-  barberToken: localStorage.getItem('queuecut_barber_jwt') || null,
+  barberToken: null, // Always require login on portal access
   queueStatus: {
     queueOpen: false,
     currentTicket: null,
@@ -53,11 +53,8 @@ function setStoredTicket(ticket) {
 
 function setBarberToken(token) {
   state.barberToken = token;
-  if (token) {
-    localStorage.setItem('queuecut_barber_jwt', token);
-  } else {
-    localStorage.removeItem('queuecut_barber_jwt');
-  }
+  // Ensure no persistent token remains so switching views always requires logging in again
+  localStorage.removeItem('queuecut_barber_jwt');
 }
 
 // --- Toast Notifications ---
@@ -156,6 +153,7 @@ async function refreshBarberEntries() {
 
 // --- Initial Data Load ---
 async function init() {
+  localStorage.removeItem('queuecut_barber_jwt');
   try {
     const status = await api.fetchQueueStatus();
     state.queueStatus = status;
@@ -177,7 +175,12 @@ async function init() {
 
 // --- Router / Hash Listener ---
 window.addEventListener('hashchange', () => {
+  const previousRoute = state.route;
   state.route = window.location.hash === '#barber' ? 'barber' : 'student';
+  if (state.route === 'barber' && previousRoute !== 'barber') {
+    // Always require fresh login when opening barber / admin portal
+    setBarberToken(null);
+  }
   if (state.route === 'barber' && state.barberToken) {
     refreshBarberEntries();
   }
@@ -207,7 +210,7 @@ function render() {
           ${state.soundEnabled ? '🔔 Sound ON' : '🔕 Muted'}
         </button>
         <button id="switch-view-btn" class="nav-btn ${state.route === 'barber' ? 'active' : ''}">
-          ${state.route === 'student' ? 'Barber Portal' : '👤 Student View'}
+          ${state.route === 'student' ? '✂️ Admin Portal' : '👤 Student View'}
         </button>
       </div>
     </header>
@@ -391,23 +394,23 @@ function renderBarberView() {
       <div class="card" style="max-width: 400px; margin: 40px auto;">
         <div style="text-align: center; margin-bottom: 20px;">
           <div class="brand-icon" style="margin: 0 auto 12px; width: 48px; height: 48px; font-size: 26px;">✂️</div>
-          <h2 style="font-family: var(--font-family-display); font-size: 1.5rem; font-weight: 800;">Barber Portal</h2>
-          <p style="font-size: 0.85rem; color: var(--text-secondary);">Sign in to manage today's queue</p>
+          <h2 style="font-family: var(--font-family-display); font-size: 1.5rem; font-weight: 800;">Barber / Admin Portal</h2>
+          <p style="font-size: 0.85rem; color: var(--text-secondary);">Restricted access &mdash; Barber credentials required</p>
         </div>
 
-        <form id="barber-login-form">
+        <form id="barber-login-form" autocomplete="off">
           <div class="form-group">
-            <label class="form-label">Username</label>
-            <input id="login-username" type="text" class="form-input" value="arslan" required />
+            <label class="form-label" for="login-username">Username</label>
+            <input id="login-username" type="text" class="form-input" placeholder="Enter username" autocomplete="off" required />
           </div>
 
           <div class="form-group">
-            <label class="form-label">Password</label>
-            <input id="login-password" type="password" class="form-input" placeholder="Enter password" required />
+            <label class="form-label" for="login-password">Password</label>
+            <input id="login-password" type="password" class="form-input" placeholder="Enter password" autocomplete="new-password" required />
           </div>
 
           <button type="submit" class="btn btn-primary" ${state.loading ? 'disabled' : ''}>
-            ${state.loading ? 'Signing In...' : '🔑 Sign In to Dashboard'}
+            ${state.loading ? 'Signing In...' : '🔑 Sign In to Admin Dashboard'}
           </button>
         </form>
       </div>
@@ -578,6 +581,10 @@ function bindEvents() {
   if (switchBtn) {
     switchBtn.onclick = () => {
       const nextRoute = state.route === 'student' ? 'barber' : 'student';
+      if (nextRoute === 'barber') {
+        // Always require login when clicking into admin / barber portal
+        setBarberToken(null);
+      }
       window.location.hash = nextRoute === 'barber' ? '#barber' : '';
     };
   }

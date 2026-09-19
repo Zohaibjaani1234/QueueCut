@@ -2,7 +2,8 @@
  * QueueCut API Client & SSE Stream Manager
  */
 
-const API_BASE = '/api';
+const API_URL = import.meta.env.VITE_API_BASE_URL ? import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '') : '';
+const API_BASE = `${API_URL}/api`;
 
 async function request(path, options = {}) {
   const url = `${API_BASE}${path}`;
