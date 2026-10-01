@@ -1,0 +1,25 @@
+# Render Blueprint — QueueCut backend (Spring Boot, Docker)
+# Database: external Postgres (Neon). Frontend: Vercel.
+services:
+  - type: web
+    name: queuecut-backend
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      # Neon connection string, e.g. postgresql://user:pass@ep-xxx.neon.tech/neondb?sslmode=require
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      # First-login barber password (change it from the dashboard afterwards)
+      - key: BARBER_INITIAL_PASSWORD
+        sync: false
+      # The Vercel frontend URL, e.g. https://queuecut.vercel.app
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false

@@ -4,6 +4,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -52,8 +54,23 @@ public class SseService {
 
     /**
      * Broadcasts an event with payload to all connected SSE clients.
+     * Inside a transaction, the send is deferred until after commit — clients react to events
+     * by re-fetching their status, and must not read the pre-commit (stale) state.
      */
     public void broadcast(String eventName, Object data) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    sendToAll(eventName, data);
+                }
+            });
+        } else {
+            sendToAll(eventName, data);
+        }
+    }
+
+    private void sendToAll(String eventName, Object data) {
         List<SseEmitter> deadEmitters = new CopyOnWriteArrayList<>();
 
         for (SseEmitter emitter : emitters) {

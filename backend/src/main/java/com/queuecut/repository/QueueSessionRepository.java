@@ -2,7 +2,9 @@ package com.queuecut.repository;
 
 import com.queuecut.entity.QueueSession;
 import com.queuecut.entity.SessionStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,6 +20,15 @@ public interface QueueSessionRepository extends JpaRepository<QueueSession, UUID
     Optional<QueueSession> findBySessionDateAndStatus(LocalDate date, SessionStatus status);
 
     Optional<QueueSession> findBySessionDate(LocalDate date);
+
+    /**
+     * Takes a row lock (SELECT ... FOR UPDATE) on the session until the transaction ends.
+     * Every queue mutation calls this first, so concurrent joins / cancels / call-next
+     * on the same session run one after another instead of racing.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT qs FROM QueueSession qs WHERE qs.id = :sessionId")
+    QueueSession lockById(@Param("sessionId") UUID sessionId);
 
     /**
      * Atomically increments last_queue_number and returns the new value.

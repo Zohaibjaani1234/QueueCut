@@ -8,6 +8,7 @@ import com.queuecut.entity.QueueEntry;
 import com.queuecut.entity.QueueSession;
 import com.queuecut.entity.QueueStatus;
 import com.queuecut.entity.SessionStatus;
+import com.queuecut.exception.QueueAlreadyAdvancedException;
 import com.queuecut.repository.BarberAccountRepository;
 import com.queuecut.repository.QueueEntryRepository;
 import com.queuecut.repository.QueueSessionRepository;
@@ -23,6 +24,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -98,11 +100,33 @@ class BarberServiceTest {
         when(queueEntryRepository.save(any(QueueEntry.class))).thenAnswer(i -> i.getArgument(0));
         when(queueEntryRepository.countActiveEntries(sessionId)).thenReturn(1L);
 
-        CallNextResponse response = barberService.callNext("arslan");
+        CallNextResponse response = barberService.callNext("arslan", null, false);
 
         assertThat(response).isNotNull();
         assertThat(current.getStatus()).isEqualTo(QueueStatus.COMPLETED);
         assertThat(response.getCurrentEntry().getQueueNumber()).isEqualTo(10);
         assertThat(response.getCurrentEntry().getStatus()).isEqualTo(QueueStatus.CURRENT);
+    }
+
+    @Test
+    @DisplayName("callNext: rejects a stale double-tap when the chair already changed, without modifying entries")
+    void callNext_StaleExpectedCurrent() {
+        UUID sessionId = UUID.randomUUID();
+        QueueSession session = new QueueSession();
+        session.setId(sessionId);
+
+        QueueEntry nowInChair = new QueueEntry();
+        nowInChair.setId(UUID.randomUUID());
+        nowInChair.setStatus(QueueStatus.CURRENT);
+
+        when(queueSessionRepository.findBySessionDate(any(LocalDate.class))).thenReturn(Optional.of(session));
+        when(queueEntryRepository.findBySessionIdAndStatus(sessionId, QueueStatus.CURRENT))
+                .thenReturn(Optional.of(nowInChair));
+
+        // Barber's screen still showed an empty chair when they tapped again
+        assertThatThrownBy(() -> barberService.callNext("arslan", null, true))
+                .isInstanceOf(QueueAlreadyAdvancedException.class);
+        assertThat(nowInChair.getStatus()).isEqualTo(QueueStatus.CURRENT);
+        verify(queueEntryRepository, never()).save(any());
     }
 }

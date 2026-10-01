@@ -94,8 +94,12 @@ public class QueueService {
         QueueSession session = queueSessionRepository.findBySessionDateAndStatus(today, SessionStatus.OPEN)
                 .orElseThrow(QueueClosedException::new);
 
-        String trimmedStudentId = request.getStudentId().trim();
+        // Upper-case so 24f-3089 and 24F-3089 are the same student (one active ticket each)
+        String trimmedStudentId = request.getStudentId().trim().toUpperCase(java.util.Locale.ROOT);
         String trimmedName = request.getStudentName().trim();
+
+        // Serialize joins for this session so the duplicate check below can't race
+        queueSessionRepository.lockById(session.getId());
 
         // Check if student already has an active entry in this session
         if (queueEntryRepository.existsActiveEntryForStudent(session.getId(), trimmedStudentId)) {
@@ -181,6 +185,7 @@ public class QueueService {
      */
     @Transactional
     public void cancelEntry(UUID entryId, UUID studentToken) {
+        queueEntryRepository.findSessionIdByEntryId(entryId).ifPresent(queueSessionRepository::lockById);
         QueueEntry entry = queueEntryRepository.findById(entryId)
                 .orElseThrow(EntryNotFoundException::new);
 

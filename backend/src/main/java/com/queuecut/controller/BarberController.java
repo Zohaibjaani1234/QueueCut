@@ -1,9 +1,12 @@
 package com.queuecut.controller;
 
+import com.queuecut.dto.auth.ChangePasswordRequest;
 import com.queuecut.dto.queue.CallNextResponse;
 import com.queuecut.dto.queue.QueueEntryDto;
 import com.queuecut.dto.queue.QueueSessionDto;
+import com.queuecut.service.AuthService;
 import com.queuecut.service.BarberService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -18,9 +21,25 @@ import java.util.UUID;
 public class BarberController {
 
     private final BarberService barberService;
+    private final AuthService authService;
 
-    public BarberController(BarberService barberService) {
+    public BarberController(BarberService barberService, AuthService authService) {
         this.barberService = barberService;
+        this.authService = authService;
+    }
+
+    /**
+     * Changes the logged-in barber's password (requires the current password).
+     */
+    @PostMapping("/account/password")
+    public ResponseEntity<Map<String, Object>> changePassword(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody ChangePasswordRequest request) {
+        authService.changePassword(userDetails.getUsername(), request);
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "message", "Password changed successfully."
+        ));
     }
 
     /**
@@ -51,8 +70,14 @@ public class BarberController {
      * Calls the next student in line (completing the current one if present).
      */
     @PostMapping("/queue/call-next")
-    public ResponseEntity<CallNextResponse> callNext(@AuthenticationPrincipal UserDetails userDetails) {
-        return ResponseEntity.ok(barberService.callNext(userDetails.getUsername()));
+    public ResponseEntity<CallNextResponse> callNext(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam(value = "expectedCurrent", required = false) String expectedCurrent) {
+        // expectedCurrent: entry id shown in the chair, or "none" when the chair is shown empty.
+        // Omitted = no double-tap protection (older clients).
+        boolean check = expectedCurrent != null;
+        UUID expectedId = (check && !"none".equals(expectedCurrent)) ? UUID.fromString(expectedCurrent) : null;
+        return ResponseEntity.ok(barberService.callNext(userDetails.getUsername(), expectedId, check));
     }
 
     /**

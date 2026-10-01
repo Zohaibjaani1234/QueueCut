@@ -95,8 +95,10 @@ export async function getCurrentSession(token) {
   });
 }
 
-export async function callNext(token) {
-  return request('/barber/queue/call-next', {
+// expectedCurrentId: entry shown in the chair (null = shown empty) — lets the server reject double taps
+export async function callNext(token, expectedCurrentId) {
+  const expected = encodeURIComponent(expectedCurrentId || 'none');
+  return request(`/barber/queue/call-next?expectedCurrent=${expected}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -120,6 +122,14 @@ export async function fetchEntries(statusFilter, token) {
   const query = statusFilter ? `?status=${statusFilter}` : '';
   return request(`/barber/queue/entries${query}`, {
     headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+export async function changePassword(currentPassword, newPassword, token) {
+  return request('/barber/account/password', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ currentPassword, newPassword }),
   });
 }
 

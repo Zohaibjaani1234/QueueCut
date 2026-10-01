@@ -9,6 +9,7 @@ import com.queuecut.entity.QueueSession;
 import com.queuecut.entity.QueueStatus;
 import com.queuecut.entity.SessionStatus;
 import com.queuecut.exception.EntryNotFoundException;
+import com.queuecut.exception.QueueAlreadyAdvancedException;
 import com.queuecut.exception.InvalidStateTransitionException;
 import com.queuecut.repository.BarberAccountRepository;
 import com.queuecut.repository.QueueEntryRepository;
@@ -103,14 +104,27 @@ public class BarberService {
         return toSessionDto(session);
     }
 
+    /**
+     * @param expectedCurrentId the entry the barber's screen shows in the chair (null = chair shown empty).
+     *                          If the chair has changed since (double tap, second device), the call is rejected
+     *                          instead of advancing the queue twice. Pass {@code null} together with
+     *                          {@code checkExpected=false} to skip the check.
+     */
     @Transactional
-    public CallNextResponse callNext(String username) {
+    public CallNextResponse callNext(String username, UUID expectedCurrentId, boolean checkExpected) {
         LocalDate today = LocalDate.now();
         QueueSession session = queueSessionRepository.findBySessionDate(today)
                 .orElseThrow(() -> new IllegalStateException("No queue session found for today."));
+        queueSessionRepository.lockById(session.getId());
 
         // 1. If someone is currently in the chair, complete them
         Optional<QueueEntry> currentEntryOpt = queueEntryRepository.findBySessionIdAndStatus(session.getId(), QueueStatus.CURRENT);
+        if (checkExpected) {
+            UUID actualCurrentId = currentEntryOpt.map(QueueEntry::getId).orElse(null);
+            if (!java.util.Objects.equals(actualCurrentId, expectedCurrentId)) {
+                throw new QueueAlreadyAdvancedException();
+            }
+        }
         if (currentEntryOpt.isPresent()) {
             QueueEntry current = currentEntryOpt.get();
             current.setStatus(QueueStatus.COMPLETED);
@@ -152,6 +166,7 @@ public class BarberService {
 
     @Transactional
     public QueueEntryDto completeEntry(UUID entryId) {
+        queueEntryRepository.findSessionIdByEntryId(entryId).ifPresent(queueSessionRepository::lockById);
         QueueEntry entry = queueEntryRepository.findById(entryId)
                 .orElseThrow(EntryNotFoundException::new);
 
@@ -171,6 +186,7 @@ public class BarberService {
 
     @Transactional
     public QueueEntryDto skipEntry(UUID entryId) {
+        queueEntryRepository.findSessionIdByEntryId(entryId).ifPresent(queueSessionRepository::lockById);
         QueueEntry entry = queueEntryRepository.findById(entryId)
                 .orElseThrow(EntryNotFoundException::new);
 

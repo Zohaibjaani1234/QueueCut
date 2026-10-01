@@ -69,7 +69,9 @@ public class DatabaseConfig {
                         }
                     }
 
-                    jdbcUrl = String.format("jdbc:postgresql://%s:%d/%s", host, port, dbName);
+                    // Keep query params (Neon/Supabase need ?sslmode=require)
+                    String query = uri.getRawQuery() != null ? "?" + uri.getRawQuery() : "";
+                    jdbcUrl = String.format("jdbc:postgresql://%s:%d/%s%s", host, port, dbName, query);
                     log.info("Converted Render DATABASE_URL to JDBC URL format: jdbc:postgresql://{}:{}/{}", host, port, dbName);
                 } catch (Exception e) {
                     log.warn("Failed to parse DATABASE_URL as URI, prepending 'jdbc:' prefix: {}", e.getMessage());

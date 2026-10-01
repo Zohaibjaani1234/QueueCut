@@ -6,6 +6,7 @@ import com.queuecut.dto.queue.QueueSessionDto;
 import com.queuecut.entity.QueueStatus;
 import com.queuecut.entity.SessionStatus;
 import com.queuecut.exception.GlobalExceptionHandler;
+import com.queuecut.service.AuthService;
 import com.queuecut.service.BarberService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +39,9 @@ class BarberControllerTest {
 
     @Mock
     private BarberService barberService;
+
+    @Mock
+    private AuthService authService;
 
     @InjectMocks
     private BarberController barberController;

@@ -23,6 +23,13 @@ public interface QueueEntryRepository extends JpaRepository<QueueEntry, UUID> {
     Optional<QueueEntry> findByStudentToken(UUID studentToken);
 
     /**
+     * Session id of an entry, without loading the entry into the persistence context
+     * (so the entry can be read fresh after the session lock is taken).
+     */
+    @Query("SELECT qe.session.id FROM QueueEntry qe WHERE qe.id = :entryId")
+    Optional<UUID> findSessionIdByEntryId(@Param("entryId") UUID entryId);
+
+    /**
      * Check if a student already has an active entry in this session.
      * Active = WAITING, ALMOST_READY, or CURRENT.
      */

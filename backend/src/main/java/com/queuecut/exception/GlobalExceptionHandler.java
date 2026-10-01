@@ -5,6 +5,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -52,6 +53,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(UnauthorizedEntryAccessException.class)
     public ResponseEntity<ApiError> handleUnauthorizedAccess(UnauthorizedEntryAccessException ex) {
         return error(HttpStatus.FORBIDDEN, ex.getMessage());
+    }
+
+    @ExceptionHandler(QueueAlreadyAdvancedException.class)
+    public ResponseEntity<ApiError> handleQueueAlreadyAdvanced(QueueAlreadyAdvancedException ex) {
+        return error(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiError> handleDataIntegrity(DataIntegrityViolationException ex) {
+        // Safety net: a database constraint (e.g. one active ticket per student) rejected a concurrent write
+        log.warn("Data integrity violation: {}", ex.getMostSpecificCause().getMessage());
+        return error(HttpStatus.CONFLICT, "This conflicted with another update. Please refresh and try again.");
+    }
+
+    @ExceptionHandler(InvalidPasswordChangeException.class)
+    public ResponseEntity<ApiError> handleInvalidPasswordChange(InvalidPasswordChangeException ex) {
+        return error(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
     // --- Security Exceptions ---

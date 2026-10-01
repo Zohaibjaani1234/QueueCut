@@ -18,11 +18,30 @@ const state = {
   myStatus: null,
   barberEntries: [],
   soundEnabled: localStorage.getItem('queuecut_sound') !== 'false',
+  theme: getStoredTheme(),
   lastStatus: null,
   showCancelModal: false,
   showSettingsModal: false,
+  showPasswordModal: false,
   loading: false,
 };
+
+// --- Theme (Light / Night) ---
+function getStoredTheme() {
+  try {
+    return localStorage.getItem('queuecut_theme') === 'dark' ? 'dark' : 'light';
+  } catch (e) {
+    return 'light';
+  }
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', theme === 'dark' ? '#000000' : '#eef5ff');
+}
+
+applyTheme(state.theme);
 
 // --- Storage Helpers ---
 function getStoredTicket() {
@@ -57,6 +76,22 @@ function setBarberToken(token) {
   localStorage.removeItem('queuecut_barber_jwt');
 }
 
+// FAST roll number: batch 21–29 + campus letter + dash + 4 digits (same rule as the backend)
+const ROLL_NUMBER_PATTERN = /^2[1-9][FMKLIP]-\d{4}$/;
+
+// Barber action in flight — blocks double taps on Call Next / Done / Skip
+let barberBusy = false;
+
+// --- HTML Escaping (student names / IDs are user input) ---
+function esc(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // --- Toast Notifications ---
 function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container') || createToastContainer();
@@ -64,7 +99,7 @@ function showToast(message, type = 'info') {
   toast.className = `toast ${type}`;
   
   const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
-  toast.innerHTML = `<span style="font-weight: bold">${icon}</span> <span>${message}</span>`;
+  toast.innerHTML = `<span style="font-weight: bold">${icon}</span> <span>${esc(message)}</span>`;
   
   container.appendChild(toast);
   setTimeout(() => {
@@ -81,15 +116,14 @@ function createToastContainer() {
 
 // --- Real-time SSE Connection ---
 function initSse() {
-  api.connectSse((eventType, data) => {
+  api.connectSse(async (eventType, data) => {
     if (eventType === 'INIT' || eventType === 'QUEUE_UPDATED') {
       state.queueStatus = data;
-      if (state.studentTicket) {
-        refreshMyStatus();
-      }
-      if (state.barberToken && state.route === 'barber') {
-        refreshBarberEntries();
-      }
+      // Wait for the fresh ticket / roster before re-rendering, otherwise the screen shows stale data
+      await Promise.all([
+        state.studentTicket ? refreshMyStatus() : null,
+        state.barberToken && state.route === 'barber' ? refreshBarberEntries() : null,
+      ]);
       render();
     } else if (eventType === 'SESSION_STATUS_CHANGED') {
       showToast(data.message, data.isQueueOpen ? 'success' : 'info');
@@ -125,6 +159,11 @@ async function refreshMyStatus() {
 
     // Clear local storage if ticket reached terminal state
     if (['COMPLETED', 'SKIPPED', 'CANCELLED'].includes(status.status)) {
+      if (status.status === 'COMPLETED') {
+        showToast('✂️ Haircut complete. Thanks for visiting!', 'success');
+      } else if (status.status === 'SKIPPED') {
+        showToast('You were marked as no-show and removed from the queue.', 'error');
+      }
       setStoredTicket(null);
       state.myStatus = null;
       state.lastStatus = null;
@@ -195,7 +234,7 @@ function render() {
     <header class="navbar">
       <a href="#" class="brand">
         <div class="brand-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="6" cy="6" r="3"></circle>
             <circle cx="6" cy="18" r="3"></circle>
             <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
@@ -206,6 +245,9 @@ function render() {
         <div class="brand-name">QueueCut</div>
       </a>
       <div class="nav-links">
+        <button id="toggle-theme-btn" class="nav-btn" title="Switch light / night mode">
+          ${state.theme === 'dark' ? '☀️ Light' : '🌙 Night'}
+        </button>
         <button id="toggle-sound-btn" class="nav-btn" title="Toggle audio alerts">
           ${state.soundEnabled ? '🔔 Sound ON' : '🔕 Muted'}
         </button>
@@ -223,6 +265,7 @@ function render() {
     <!-- Modals -->
     ${state.showCancelModal ? renderCancelModal() : ''}
     ${state.showSettingsModal ? renderSettingsModal() : ''}
+    ${state.showPasswordModal ? renderPasswordModal() : ''}
 
     <!-- Footer -->
     <footer class="footer">
@@ -237,6 +280,17 @@ function render() {
 function renderStudentView() {
   const { queueOpen, currentTicket, currentStudentName, totalWaiting, estimatedWaitMinutes, avgHaircutMinutes } = state.queueStatus;
   const myStatus = state.myStatus;
+
+  // Case 0: Ticket stored but status not loaded yet — never show the join form again
+  if (state.studentTicket && !myStatus) {
+    return `
+      <div class="card" style="text-align: center;">
+        <div style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 600; margin-bottom: 8px;">YOUR QUEUE TICKET</div>
+        <div class="ticket-number-display">#${esc(state.studentTicket.queueNumber)}</div>
+        <div style="color: var(--text-secondary); font-size: 0.9rem;">Loading your live status...</div>
+      </div>
+    `;
+  }
 
   // Case 1: Student has an active ticket
   if (state.studentTicket && myStatus) {
@@ -258,7 +312,7 @@ function renderStudentView() {
         <div class="now-serving-hero">
           <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);">Ticket Number</div>
           <div class="ticket-number-display">#${myStatus.queueNumber}</div>
-          <div style="font-weight: 600; font-size: 1.1rem;">${myStatus.studentName} (${myStatus.studentId})</div>
+          <div style="font-weight: 600; font-size: 1.1rem;">${esc(myStatus.studentName)} (${esc(myStatus.studentId)})</div>
         </div>
 
         <!-- Dynamic Alert Banners -->
@@ -296,19 +350,19 @@ function renderStudentView() {
 
         <!-- Progress Timeline -->
         <div style="background: var(--bg-surface-elevated); padding: 14px; border-radius: var(--radius-md); margin-bottom: 20px; font-size: 0.85rem; color: var(--text-secondary); text-align: center;">
-          ${currentTicket ? `Currently serving <strong>#${currentTicket} (${currentStudentName || ''})</strong>` : 'Barber is calling next student...'}
+          ${currentTicket ? `Currently serving <strong>#${currentTicket} (${esc(currentStudentName)})</strong>` : 'Barber is calling next student...'}
         </div>
 
         <!-- Actions -->
         <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
           ${!isCurrent ? `
             <button id="open-cancel-btn" class="btn btn-danger">
-              ❌ Cancel My Ticket
+              ⏭️ Skip &amp; Leave Queue
             </button>
+            <div style="font-size: 0.78rem; color: var(--text-muted); text-align: center;">
+              Can't make it? Skip to leave the line. If you join again, you'll go to the end of the queue.
+            </div>
           ` : ''}
-          <button id="join-another-btn" class="btn btn-secondary" style="font-size: 0.85rem; padding: 10px;">
-            ➕ Join as Another Student (Test / Switch Device)
-          </button>
         </div>
       </div>
     `;
@@ -334,7 +388,7 @@ function renderStudentView() {
         <div class="now-serving-hero">
           <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); font-weight: 700;">NOW SERVING IN CHAIR</div>
           <div class="ticket-number-display">#${currentTicket}</div>
-          <div style="font-weight: 600; color: var(--text-primary);">${currentStudentName || 'Student'}</div>
+          <div style="font-weight: 600; color: var(--text-primary);">${esc(currentStudentName || 'Student')}</div>
         </div>
       ` : ''}
 
@@ -366,7 +420,10 @@ function renderStudentView() {
 
           <div class="form-group">
             <label class="form-label" for="input-roll">Student Roll ID</label>
-            <input id="input-roll" type="text" class="form-input" placeholder="e.g. 21K-3890" required minlength="3" maxlength="50" style="text-transform: uppercase" />
+            <input id="input-roll" type="text" class="form-input" placeholder="e.g. 24F-3089" required maxlength="8" autocapitalize="characters" autocomplete="off" style="text-transform: uppercase" />
+            <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; display: block;">
+              Format: batch (21–29) + campus letter (F, M, K, L, I, P) + dash + 4 digits
+            </span>
           </div>
 
           <button type="submit" class="btn btn-primary" ${state.loading ? 'disabled' : ''}>
@@ -398,15 +455,15 @@ function renderBarberView() {
           <p style="font-size: 0.85rem; color: var(--text-secondary);">Restricted access &mdash; Barber credentials required</p>
         </div>
 
-        <form id="barber-login-form" autocomplete="off">
+        <form id="barber-login-form">
           <div class="form-group">
             <label class="form-label" for="login-username">Username</label>
-            <input id="login-username" type="text" class="form-input" placeholder="Enter username" autocomplete="off" required />
+            <input id="login-username" type="text" class="form-input" placeholder="Enter username" autocomplete="username" autocapitalize="none" required />
           </div>
 
           <div class="form-group">
             <label class="form-label" for="login-password">Password</label>
-            <input id="login-password" type="password" class="form-input" placeholder="Enter password" autocomplete="new-password" required />
+            <input id="login-password" type="password" class="form-input" placeholder="Enter password" autocomplete="current-password" required />
           </div>
 
           <button type="submit" class="btn btn-primary" ${state.loading ? 'disabled' : ''}>
@@ -421,6 +478,19 @@ function renderBarberView() {
   const { queueOpen } = state.queueStatus;
   const currentInChair = state.barberEntries.find(e => e.status === 'CURRENT');
   const waitingList = state.barberEntries.filter(e => e.status === 'WAITING' || e.status === 'ALMOST_READY');
+  const nextUp = waitingList[0];
+  const avg = state.queueStatus.avgHaircutMinutes || 20;
+
+  let callNextLabel;
+  if (currentInChair && nextUp) {
+    callNextLabel = `✔️ Finish #${esc(currentInChair.queueNumber)} &amp; Call Next &rarr; #${esc(nextUp.queueNumber)} ${esc(nextUp.studentName)}`;
+  } else if (currentInChair) {
+    callNextLabel = `✔️ Finish #${esc(currentInChair.queueNumber)} (no one waiting)`;
+  } else if (nextUp) {
+    callNextLabel = `📢 Call #${esc(nextUp.queueNumber)} ${esc(nextUp.studentName)} to the Chair`;
+  } else {
+    callNextLabel = 'No students waiting';
+  }
 
   return `
     <!-- Top Action Toolbar -->
@@ -430,9 +500,12 @@ function renderBarberView() {
         <p style="font-size: 0.85rem; color: var(--text-secondary);">Muhammad Arslan | FAST Campus Shop</p>
       </div>
 
-      <div style="display: flex; gap: 10px;">
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
         <button id="toggle-session-btn" class="btn ${queueOpen ? 'btn-danger' : 'btn-emerald'}" style="width: auto; padding: 10px 16px;">
           ${queueOpen ? '🔒 Close Queue' : '🟢 Open Queue'}
+        </button>
+        <button id="open-password-btn" class="btn btn-secondary" style="width: auto; padding: 10px 14px;" title="Change admin password">
+          🔑 Password
         </button>
         <button id="open-settings-btn" class="btn btn-secondary" style="width: auto; padding: 10px 14px;" title="Haircut settings">
           ⚙️ ${state.queueStatus.avgHaircutMinutes || 20}m
@@ -443,79 +516,73 @@ function renderBarberView() {
       </div>
     </div>
 
-    <!-- Hero Currently in Chair -->
-    <div class="card card-glow">
-      <div style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); font-weight: 700; margin-bottom: 8px;">
-        💈 CURRENTLY IN THE CHAIR
-      </div>
-
+    <!-- 1. Who is in the chair right now -->
+    <div class="section-label">💈 In the chair now</div>
+    <div class="card chair-card ${currentInChair ? 'occupied' : ''}">
       ${currentInChair ? `
-        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 16px;">
+        <div class="chair-row">
           <div>
-            <div style="font-family: var(--font-family-display); font-size: 2.8rem; font-weight: 800; color: var(--accent-gold); line-height: 1;">
-              #${currentInChair.queueNumber}
+            <div class="chair-number">#${esc(currentInChair.queueNumber)}</div>
+            <div class="chair-name">${esc(currentInChair.studentName)}</div>
+            <div class="chair-meta">
+              Roll ID: ${esc(currentInChair.studentId)}
+              ${currentInChair.calledAt ? ` &middot; in chair since ${formatTime(currentInChair.calledAt)}` : ''}
             </div>
-            <div style="font-size: 1.2rem; font-weight: 700;">${currentInChair.studentName}</div>
-            <div style="font-size: 0.85rem; color: var(--text-secondary);">Roll ID: ${currentInChair.studentId}</div>
           </div>
-
-          <div style="display: flex; gap: 10px;">
-            <button class="btn btn-emerald finish-entry-btn" data-id="${currentInChair.id}" style="width: auto; padding: 12px 20px;">
-              ✔️ Complete Haircut
+          <div class="chair-actions">
+            <button class="btn btn-emerald finish-entry-btn" data-id="${esc(currentInChair.id)}">
+              ✔️ Haircut Done
             </button>
-            <button class="btn btn-danger skip-entry-btn" data-id="${currentInChair.id}" style="width: auto; padding: 12px 16px;">
-              ⏭️ Skip / No-Show
+            <button class="btn btn-danger skip-entry-btn" data-id="${esc(currentInChair.id)}">
+              ⏭️ No-Show
             </button>
           </div>
         </div>
       ` : `
-        <div style="padding: 24px 0; text-align: center; color: var(--text-muted);">
-          No student currently in the chair. Click <strong>Call Next Student</strong> below.
+        <div class="chair-empty">
+          🪑 Chair is empty${nextUp ? ` &mdash; press the blue button to call <strong>#${esc(nextUp.queueNumber)} ${esc(nextUp.studentName)}</strong>` : ''}
         </div>
       `}
     </div>
 
-    <!-- Massive Call Next CTA -->
-    <div style="margin-bottom: 24px;">
-      <button id="call-next-btn" class="btn btn-primary btn-giant">
-        📢 CALL NEXT STUDENT ${waitingList.length > 0 ? `(#${waitingList[0].queueNumber} - ${waitingList[0].studentName})` : ''}
+    <!-- Call Next CTA — label says exactly what will happen -->
+    <div style="margin-bottom: 28px;">
+      <button id="call-next-btn" class="btn btn-primary btn-giant" ${!currentInChair && !nextUp ? 'disabled' : ''}>
+        ${callNextLabel}
       </button>
     </div>
 
-    <!-- Waiting Queue Roster -->
+    <!-- 2. Waiting line (not in the chair yet) -->
+    <div class="section-label">📋 Waiting line &mdash; ${waitingList.length} ${waitingList.length === 1 ? 'student' : 'students'}</div>
     <div class="card">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <h3 style="font-family: var(--font-family-display); font-size: 1.1rem; font-weight: 700;">
-          📋 Waiting Line (${waitingList.length} students)
-        </h3>
-        <span style="font-size: 0.8rem; color: var(--text-muted);">Avg time: ${state.queueStatus.avgHaircutMinutes} min/person</span>
-      </div>
-
       ${waitingList.length > 0 ? `
         <div class="roster-list">
-          ${waitingList.map(entry => `
-            <div class="roster-item">
-              <div class="roster-number">#${entry.queueNumber}</div>
+          ${waitingList.map((entry, i) => `
+            <div class="roster-item ${i === 0 ? 'next' : ''}">
+              <div class="roster-pos">${i + 1}</div>
+              <div class="roster-number">#${esc(entry.queueNumber)}</div>
               <div class="roster-info">
-                <div class="roster-name">${entry.studentName}</div>
-                <div class="roster-id">${entry.studentId}</div>
+                <div class="roster-name">${esc(entry.studentName)}</div>
+                <div class="roster-id">${esc(entry.studentId)} &middot; ~${i * avg + (currentInChair ? avg : 0)} min</div>
               </div>
-              <span class="status-pill ${entry.status.toLowerCase().replace('_', '-')}">
-                ${entry.status.replace('_', ' ')}
-              </span>
+              ${i === 0 ? '<span class="badge-next">NEXT</span>' : ''}
               <div class="roster-actions">
-                <button class="btn btn-danger btn-xs skip-entry-btn" data-id="${entry.id}">Skip</button>
+                <button class="btn btn-danger btn-xs skip-entry-btn" data-id="${esc(entry.id)}">Skip</button>
               </div>
             </div>
           `).join('')}
         </div>
       ` : `
         <div style="text-align: center; color: var(--text-muted); padding: 20px;">
-          Queue line is empty!
+          No one is waiting.
         </div>
       `}
     </div>
   `;
+}
+
+function formatTime(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 // --- MODAL RENDERERS ---
@@ -524,15 +591,51 @@ function renderCancelModal() {
     <div class="modal-overlay active">
       <div class="modal-card">
         <h3 style="font-family: var(--font-family-display); font-size: 1.25rem; font-weight: 800; margin-bottom: 12px;">
-          Cancel Queue Ticket?
+          Skip &amp; leave the queue?
         </h3>
         <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 20px;">
-          Are you sure you want to forfeit your place in line? You will have to join again if you change your mind.
+          You will lose your place (#${esc(state.studentTicket?.queueNumber)}). If you join again later, you will get a new number at the <strong>end of the line</strong>.
         </p>
         <div style="display: flex; gap: 10px;">
-          <button id="confirm-cancel-btn" class="btn btn-danger">Yes, Cancel Ticket</button>
+          <button id="confirm-cancel-btn" class="btn btn-danger">Yes, Skip</button>
           <button id="close-cancel-btn" class="btn btn-secondary">Keep My Place</button>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPasswordModal() {
+  return `
+    <div class="modal-overlay active">
+      <div class="modal-card">
+        <h3 style="font-family: var(--font-family-display); font-size: 1.25rem; font-weight: 800; margin-bottom: 6px;">
+          🔑 Change Admin Password
+        </h3>
+        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px;">
+          Use a new password that you haven't used anywhere else (at least 8 characters).
+        </p>
+        <form id="password-form">
+          <input type="text" name="username" value="arslan" autocomplete="username" hidden />
+          <div class="form-group">
+            <label class="form-label" for="input-current-password">Current Password</label>
+            <input id="input-current-password" type="password" class="form-input" autocomplete="current-password" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="input-new-password">New Password</label>
+            <input id="input-new-password" type="password" class="form-input" autocomplete="new-password" minlength="8" maxlength="72" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="input-confirm-password">Confirm New Password</label>
+            <input id="input-confirm-password" type="password" class="form-input" autocomplete="new-password" minlength="8" maxlength="72" required />
+          </div>
+          <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button type="submit" class="btn btn-primary" ${state.loading ? 'disabled' : ''}>
+              ${state.loading ? 'Saving...' : 'Change Password'}
+            </button>
+            <button type="button" id="close-password-btn" class="btn btn-secondary">Cancel</button>
+          </div>
+        </form>
       </div>
     </div>
   `;
@@ -577,6 +680,20 @@ function bindEvents() {
     };
   }
 
+  const themeBtn = document.getElementById('toggle-theme-btn');
+  if (themeBtn) {
+    themeBtn.onclick = () => {
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      try {
+        localStorage.setItem('queuecut_theme', state.theme);
+      } catch (e) {
+        // Storage unavailable — theme still applies for this visit
+      }
+      applyTheme(state.theme);
+      render();
+    };
+  }
+
   const switchBtn = document.getElementById('switch-view-btn');
   if (switchBtn) {
     switchBtn.onclick = () => {
@@ -595,9 +712,13 @@ function bindEvents() {
     joinForm.onsubmit = async (e) => {
       e.preventDefault();
       const name = document.getElementById('input-name').value.trim();
-      const roll = document.getElementById('input-roll').value.trim();
+      const roll = document.getElementById('input-roll').value.trim().toUpperCase();
 
-      if (!name || !roll) return;
+      if (!name || !roll || state.studentTicket) return;
+      if (!ROLL_NUMBER_PATTERN.test(roll)) {
+        showToast('Invalid roll number. Use the format 24F-3089 (batch 21–29, letter F/M/K/L/I/P, dash, 4 digits).', 'error');
+        return;
+      }
 
       state.loading = true;
       render();
@@ -623,17 +744,6 @@ function bindEvents() {
         state.loading = false;
         render();
       }
-    };
-  }
-
-  // Join Another Student (Testing / Switch Device)
-  const joinAnotherBtn = document.getElementById('join-another-btn');
-  if (joinAnotherBtn) {
-    joinAnotherBtn.onclick = () => {
-      setStoredTicket(null);
-      state.myStatus = null;
-      showToast('Switched to public queue view. You can now join as another student.', 'info');
-      render();
     };
   }
 
@@ -663,7 +773,7 @@ function bindEvents() {
         setStoredTicket(null);
         state.myStatus = null;
         state.showCancelModal = false;
-        showToast('Ticket cancelled.', 'info');
+        showToast("You skipped and left the queue. Join again anytime — you'll be added at the end.", 'info');
       } catch (err) {
         showToast(err.message, 'error');
       }
@@ -708,27 +818,36 @@ function bindEvents() {
           await api.openSession(state.barberToken);
           showToast('Queue is now OPEN!', 'success');
         }
+        state.queueStatus = await api.fetchQueueStatus();
         await refreshBarberEntries();
       } catch (err) {
         showToast(err.message, 'error');
       }
+      render();
     };
   }
 
   const callNextBtn = document.getElementById('call-next-btn');
   if (callNextBtn) {
     callNextBtn.onclick = async () => {
+      if (barberBusy) return; // ignore extra taps while the request is in flight
+      barberBusy = true;
+      callNextBtn.disabled = true;
+      const inChair = state.barberEntries.find(e => e.status === 'CURRENT');
       try {
-        const res = await api.callNext(state.barberToken);
+        const res = await api.callNext(state.barberToken, inChair?.id);
         if (res.currentEntry) {
           showToast(`Called Ticket #${res.currentEntry.queueNumber} (${res.currentEntry.studentName})`, 'success');
         } else {
           showToast('No more waiting students in line.', 'info');
         }
-        await refreshBarberEntries();
       } catch (err) {
         showToast(err.message, 'error');
+      } finally {
+        await refreshBarberEntries();
+        barberBusy = false;
       }
+      render();
     };
   }
 
@@ -743,31 +862,88 @@ function bindEvents() {
 
   document.querySelectorAll('.finish-entry-btn').forEach(btn => {
     btn.onclick = async () => {
+      if (barberBusy) return;
+      barberBusy = true;
+      btn.disabled = true;
       const id = btn.dataset.id;
       try {
         await api.completeEntry(id, state.barberToken);
         showToast('Haircut marked complete!', 'success');
-        await refreshBarberEntries();
       } catch (err) {
         showToast(err.message, 'error');
+      } finally {
+        await refreshBarberEntries();
+        barberBusy = false;
       }
+      render();
     };
   });
 
   document.querySelectorAll('.skip-entry-btn').forEach(btn => {
     btn.onclick = async () => {
+      if (barberBusy) return;
+      barberBusy = true;
+      btn.disabled = true;
       const id = btn.dataset.id;
       try {
         await api.skipEntry(id, state.barberToken);
         showToast('Student marked skipped.', 'info');
-        await refreshBarberEntries();
       } catch (err) {
         showToast(err.message, 'error');
+      } finally {
+        await refreshBarberEntries();
+        barberBusy = false;
       }
+      render();
     };
   });
 
   // Settings Modal
+  // Change Password Modal
+  const openPasswordBtn = document.getElementById('open-password-btn');
+  if (openPasswordBtn) {
+    openPasswordBtn.onclick = () => {
+      state.showPasswordModal = true;
+      render();
+    };
+  }
+
+  const closePasswordBtn = document.getElementById('close-password-btn');
+  if (closePasswordBtn) {
+    closePasswordBtn.onclick = () => {
+      state.showPasswordModal = false;
+      render();
+    };
+  }
+
+  const passwordForm = document.getElementById('password-form');
+  if (passwordForm) {
+    passwordForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const current = document.getElementById('input-current-password').value;
+      const next = document.getElementById('input-new-password').value;
+      const confirm = document.getElementById('input-confirm-password').value;
+
+      if (next !== confirm) {
+        showToast('New password and confirmation do not match.', 'error');
+        return;
+      }
+
+      state.loading = true;
+      render();
+      try {
+        await api.changePassword(current, next, state.barberToken);
+        state.showPasswordModal = false;
+        showToast('Password changed. Use the new password next time you log in.', 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        state.loading = false;
+        render();
+      }
+    };
+  }
+
   const openSettingsBtn = document.getElementById('open-settings-btn');
   if (openSettingsBtn) {
     openSettingsBtn.onclick = () => {
