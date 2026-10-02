@@ -229,6 +229,12 @@ window.addEventListener('hashchange', () => {
 // --- RENDER FUNCTION ---
 function render() {
   const app = document.getElementById('app');
+  // Live updates re-render the whole page — keep what the user is typing (and the cursor)
+  const typed = {};
+  app.querySelectorAll('input[id]').forEach(el => { typed[el.id] = el.value; });
+  const focused = document.activeElement?.id;
+  const caret = focused ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+
   app.innerHTML = `
     <!-- Navbar Header -->
     <header class="navbar">
@@ -272,6 +278,18 @@ function render() {
       QueueCut &copy; ${new Date().getFullYear()} FAST University Barber Shop. Designed for speed.
     </footer>
   `;
+
+  for (const [id, value] of Object.entries(typed)) {
+    const el = document.getElementById(id);
+    if (el && value && !el.value) el.value = value;
+  }
+  if (focused) {
+    const el = document.getElementById(focused);
+    if (el) {
+      el.focus();
+      try { el.setSelectionRange(caret[0], caret[1]); } catch (e) { /* not a text input */ }
+    }
+  }
 
   bindEvents();
 }
