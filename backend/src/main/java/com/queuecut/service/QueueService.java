@@ -113,8 +113,10 @@ public class QueueService {
             throw new QueueClosedException();
         }
 
-        // Ticket = next number after the last student still in the queue (#1 when the queue is empty).
+        // Ticket = students in the queue + 1 (#1 when empty). Numbers are kept as positions 1..N,
+        // so compacting first also repairs any older non-contiguous numbering.
         // Safe under concurrency: joins for this session are serialized by the lock above.
+        queueEntryRepository.compactActiveNumbers(session.getId());
         int newQueueNumber = queueEntryRepository.findMaxActiveQueueNumber(session.getId()) + 1;
 
         QueueEntry entry = new QueueEntry();
@@ -203,11 +205,13 @@ public class QueueService {
             throw new InvalidStateTransitionException(QueueStatus.CURRENT, QueueStatus.CANCELLED);
         }
 
+        UUID sessionId = entry.getSession().getId();
         entry.setStatus(QueueStatus.CANCELLED);
         queueEntryRepository.save(entry);
+        queueEntryRepository.compactActiveNumbers(sessionId); // everyone behind moves up one
 
         // Re-evaluate if someone else should now be ALMOST_READY
-        promoteCandidateIfNeeded(entry.getSession().getId());
+        promoteCandidateIfNeeded(sessionId);
 
         sseService.broadcast("QUEUE_UPDATED", getPublicStatus());
     }

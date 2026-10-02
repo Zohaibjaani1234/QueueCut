@@ -183,6 +183,7 @@ class QueueServiceTest {
 
         assertThat(entry.getStatus()).isEqualTo(QueueStatus.CANCELLED);
         verify(queueEntryRepository).save(entry);
+        verify(queueEntryRepository).compactActiveNumbers(sessionId); // people behind move up
         verify(sseService).broadcast(eq("QUEUE_UPDATED"), any());
     }
 

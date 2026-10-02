@@ -3,6 +3,7 @@ package com.queuecut.repository;
 import com.queuecut.entity.QueueEntry;
 import com.queuecut.entity.QueueStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -69,6 +70,34 @@ public interface QueueEntryRepository extends JpaRepository<QueueEntry, UUID> {
                                 com.queuecut.entity.QueueStatus.CURRENT)
             """)
     int findMaxActiveQueueNumber(@Param("sessionId") UUID sessionId);
+
+    /**
+     * Renumbers the students still in the queue to 1..N in line order, so ticket numbers are
+     * always positions (chair = #1). Call while holding the session lock.
+     * Two steps because the unique index on active numbers is checked row by row:
+     * first move everyone out of the 1..N range, then assign the final positions.
+     */
+    default void compactActiveNumbers(UUID sessionId) {
+        shiftActiveNumbersOutOfRange(sessionId);
+        renumberActiveInLineOrder(sessionId);
+    }
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+            UPDATE queue_entry SET queue_number = queue_number + 100000
+            WHERE session_id = :sessionId AND status IN ('WAITING', 'ALMOST_READY', 'CURRENT')
+            """, nativeQuery = true)
+    int shiftActiveNumbersOutOfRange(@Param("sessionId") UUID sessionId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query(value = """
+            UPDATE queue_entry q SET queue_number = r.position
+            FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY queue_number) AS position
+                  FROM queue_entry
+                  WHERE session_id = :sessionId AND status IN ('WAITING', 'ALMOST_READY', 'CURRENT')) r
+            WHERE q.id = r.id
+            """, nativeQuery = true)
+    int renumberActiveInLineOrder(@Param("sessionId") UUID sessionId);
 
     /**
      * Count total active entries in a session (all people waiting).

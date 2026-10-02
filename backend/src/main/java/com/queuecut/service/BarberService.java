@@ -130,6 +130,7 @@ public class BarberService {
             current.setStatus(QueueStatus.COMPLETED);
             current.setCompletedAt(Instant.now());
             queueEntryRepository.save(current);
+            queueEntryRepository.compactActiveNumbers(session.getId()); // everyone moves up one
         }
 
         // 2. Find next waiting student
@@ -174,11 +175,13 @@ public class BarberService {
             throw new InvalidStateTransitionException(entry.getStatus(), QueueStatus.COMPLETED);
         }
 
+        UUID sessionId = entry.getSession().getId();
         entry.setStatus(QueueStatus.COMPLETED);
         entry.setCompletedAt(Instant.now());
         QueueEntry saved = queueEntryRepository.save(entry);
+        queueEntryRepository.compactActiveNumbers(sessionId); // everyone behind moves up one
 
-        queueService.promoteCandidateIfNeeded(entry.getSession().getId());
+        queueService.promoteCandidateIfNeeded(sessionId);
         sseService.broadcast("QUEUE_UPDATED", queueService.getPublicStatus());
 
         return toEntryDto(saved);
@@ -194,10 +197,12 @@ public class BarberService {
             throw new InvalidStateTransitionException(entry.getStatus(), QueueStatus.SKIPPED);
         }
 
+        UUID sessionId = entry.getSession().getId();
         entry.setStatus(QueueStatus.SKIPPED);
         QueueEntry saved = queueEntryRepository.save(entry);
+        queueEntryRepository.compactActiveNumbers(sessionId); // everyone behind moves up one
 
-        queueService.promoteCandidateIfNeeded(entry.getSession().getId());
+        queueService.promoteCandidateIfNeeded(sessionId);
         sseService.broadcast("QUEUE_UPDATED", queueService.getPublicStatus());
 
         return toEntryDto(saved);
