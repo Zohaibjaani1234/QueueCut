@@ -3,6 +3,7 @@ package com.queuecut.service;
 import com.queuecut.dto.queue.JoinQueueRequest;
 import com.queuecut.dto.queue.JoinQueueResponse;
 import com.queuecut.dto.queue.MyStatusResponse;
+import com.queuecut.dto.queue.QueueStatusResponse;
 import com.queuecut.entity.QueueEntry;
 import com.queuecut.entity.QueueSession;
 import com.queuecut.entity.QueueStatus;
@@ -70,7 +71,7 @@ class QueueServiceTest {
         when(queueEntryRepository.existsActiveEntryForStudent(sessionId, "21K-3890"))
                 .thenReturn(false);
         when(queueSessionRepository.incrementQueueNumber(sessionId)).thenReturn(1);
-        when(queueSessionRepository.getLastQueueNumber(sessionId)).thenReturn(Optional.of(6));
+        when(queueEntryRepository.findMaxActiveQueueNumber(sessionId)).thenReturn(5);
         when(settingsService.getAvgHaircutMinutes()).thenReturn(20);
         when(queueEntryRepository.countPeopleAhead(sessionId, 6)).thenReturn(2L);
 
@@ -201,5 +202,62 @@ class QueueServiceTest {
 
         assertThatThrownBy(() -> queueService.cancelEntry(entryId, token))
                 .isInstanceOf(InvalidStateTransitionException.class);
+    }
+
+    @Test
+    @DisplayName("joinQueue: first student in an empty queue gets ticket #1 with no wait")
+    void joinQueue_EmptyQueueGetsNumberOne() {
+        when(queueSessionRepository.findBySessionDateAndStatus(eq(LocalDate.now()), eq(SessionStatus.OPEN)))
+                .thenReturn(Optional.of(mockSession));
+        when(queueSessionRepository.incrementQueueNumber(sessionId)).thenReturn(1);
+        when(queueEntryRepository.findMaxActiveQueueNumber(sessionId)).thenReturn(0);
+        when(queueEntryRepository.countPeopleAhead(sessionId, 1)).thenReturn(0L);
+        when(settingsService.getAvgHaircutMinutes()).thenReturn(20);
+        when(queueEntryRepository.save(any(QueueEntry.class))).thenAnswer(i -> i.getArgument(0));
+
+        JoinQueueResponse response = queueService.joinQueue(new JoinQueueRequest("Usman Tariq", "21k-3890"));
+
+        assertThat(response.getQueueNumber()).isEqualTo(1);
+        assertThat(response.getStudentId()).isEqualTo("21K-3890");
+        assertThat(response.getPeopleAhead()).isZero();
+        assertThat(response.getEstimatedWaitMinutes()).isZero();
+    }
+
+    @Test
+    @DisplayName("joinQueue: with 3 students ahead the wait is 3 x 20 = 60 minutes")
+    void joinQueue_ThreeAheadWaitsSixtyMinutes() {
+        when(queueSessionRepository.findBySessionDateAndStatus(eq(LocalDate.now()), eq(SessionStatus.OPEN)))
+                .thenReturn(Optional.of(mockSession));
+        when(queueSessionRepository.incrementQueueNumber(sessionId)).thenReturn(1);
+        when(queueEntryRepository.findMaxActiveQueueNumber(sessionId)).thenReturn(3);
+        when(queueEntryRepository.countPeopleAhead(sessionId, 4)).thenReturn(3L);
+        when(settingsService.getAvgHaircutMinutes()).thenReturn(20);
+        when(queueEntryRepository.save(any(QueueEntry.class))).thenAnswer(i -> i.getArgument(0));
+
+        JoinQueueResponse response = queueService.joinQueue(new JoinQueueRequest("Sara Khan", "22F-1001"));
+
+        assertThat(response.getQueueNumber()).isEqualTo(4);
+        assertThat(response.getPeopleAhead()).isEqualTo(3L);
+        assertThat(response.getEstimatedWaitMinutes()).isEqualTo(60);
+    }
+
+    @Test
+    @DisplayName("getPublicStatus: wait estimate counts the student in the chair too")
+    void getPublicStatus_EstimateIncludesChair() {
+        QueueEntry inChair = new QueueEntry();
+        inChair.setQueueNumber(1);
+        inChair.setStudentName("Ali");
+        inChair.setStatus(QueueStatus.CURRENT);
+
+        when(queueSessionRepository.findBySessionDate(any(LocalDate.class))).thenReturn(Optional.of(mockSession));
+        when(settingsService.getAvgHaircutMinutes()).thenReturn(20);
+        when(queueEntryRepository.findBySessionIdAndStatus(sessionId, QueueStatus.CURRENT)).thenReturn(Optional.of(inChair));
+        when(queueEntryRepository.countActiveEntries(sessionId)).thenReturn(3L); // 1 in chair + 2 waiting
+
+        QueueStatusResponse status = queueService.getPublicStatus();
+
+        assertThat(status.getTotalWaiting()).isEqualTo(2L);
+        assertThat(status.getEstimatedWaitMinutes()).isEqualTo(60);
+        assertThat(status.getCurrentTicket()).isEqualTo(1);
     }
 }

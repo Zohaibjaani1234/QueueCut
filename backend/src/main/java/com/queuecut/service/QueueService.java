@@ -80,7 +80,8 @@ public class QueueService {
         long activeEntries = queueEntryRepository.countActiveEntries(session.getId());
         long waitingCount = currentEntryOpt.isPresent() ? Math.max(0, activeEntries - 1) : activeEntries;
         response.setTotalWaiting(waitingCount);
-        response.setEstimatedWaitMinutes((int) (waitingCount * avgHaircutMin));
+        // Wait for someone joining now: everyone in the queue (including the chair) is ahead of them
+        response.setEstimatedWaitMinutes((int) (activeEntries * avgHaircutMin));
 
         return response;
     }
@@ -106,14 +107,15 @@ public class QueueService {
             throw new AlreadyInQueueException();
         }
 
-        // Atomically increment last_queue_number
+        // Counts total joins for the day; returns 0 if the session was closed meanwhile
         int updatedRows = queueSessionRepository.incrementQueueNumber(session.getId());
         if (updatedRows == 0) {
             throw new QueueClosedException();
         }
 
-        Integer newQueueNumber = queueSessionRepository.getLastQueueNumber(session.getId())
-                .orElseThrow(() -> new IllegalStateException("Failed to generate queue number."));
+        // Ticket = next number after the last student still in the queue (#1 when the queue is empty).
+        // Safe under concurrency: joins for this session are serialized by the lock above.
+        int newQueueNumber = queueEntryRepository.findMaxActiveQueueNumber(session.getId()) + 1;
 
         QueueEntry entry = new QueueEntry();
         entry.setSession(session);

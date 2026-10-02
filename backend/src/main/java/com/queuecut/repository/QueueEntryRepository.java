@@ -59,6 +59,18 @@ public interface QueueEntryRepository extends JpaRepository<QueueEntry, UUID> {
                           @Param("myQueueNumber") int myQueueNumber);
 
     /**
+     * Highest ticket number among students still in the queue (WAITING / ALMOST_READY / CURRENT), 0 if empty.
+     */
+    @Query("""
+            SELECT COALESCE(MAX(qe.queueNumber), 0) FROM QueueEntry qe
+            WHERE qe.session.id = :sessionId
+              AND qe.status IN (com.queuecut.entity.QueueStatus.WAITING,
+                                com.queuecut.entity.QueueStatus.ALMOST_READY,
+                                com.queuecut.entity.QueueStatus.CURRENT)
+            """)
+    int findMaxActiveQueueNumber(@Param("sessionId") UUID sessionId);
+
+    /**
      * Count total active entries in a session (all people waiting).
      */
     @Query("""
